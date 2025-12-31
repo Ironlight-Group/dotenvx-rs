@@ -1,4 +1,3 @@
-use crate::commands::framework::detect_framework;
 use crate::commands::model::KeyPair;
 use crate::commands::{
     create_env_file, get_env_file_arg, get_private_key_name_for_file, is_public_key_included, write_key_pair,
@@ -18,9 +17,8 @@ pub fn init_command(command_matches: &ArgMatches, profile: &Option<String>) {
         create_global_env_keys(profile);
         return;
     }
-    let mut env_file = get_env_file_arg(command_matches, profile);
-    let env_file_exists = Path::new(&env_file).exists();
-    if env_file_exists {
+    let env_file = get_env_file_arg(command_matches, profile);
+    if Path::new(&env_file).exists() {
         if let Ok(file_content) = fs::read_to_string(&env_file) {
             if is_public_key_included(&file_content) {
                 eprintln!("The .env file already exists and contains a public key: {env_file}");
@@ -30,18 +28,9 @@ pub fn init_command(command_matches: &ArgMatches, profile: &Option<String>) {
     }
     let group_arg = command_matches.get_one::<String>("group").cloned();
     let name_arg = command_matches.get_one::<String>("name").cloned();
-    let framework_arg = command_matches.get_one::<String>("framework").cloned();
     let kp = EcKeyPair::generate();
     let public_key = kp.get_pk_hex();
-    let mut pair = format!("{}={}", "KEY1", "value1");
-    // detect framework
-    if let Some(framework) = framework_arg.or_else(detect_framework) {
-        if framework == "gofr" && env_file.starts_with(".env") {
-            env_file = format!("configs/{env_file}");
-        } else if framework == "spring-boot" {
-            pair = format!("{}={}", "key1", "value1");
-        }
-    }
+    let pair = format!("{}={}", "KEY1", "value1");
     create_env_file(&env_file, &public_key, Some(&pair), &group_arg, &name_arg);
     let env_file_path = PathBuf::from(&env_file)
         .canonicalize()
@@ -141,16 +130,6 @@ fn create_global_env_keys(profile: &Option<String>) {
             );
             key_pairs.push(key_pair);
         }
-        // dotenvx cloud key pair
-        let dotenvx_cloud_keypair = EcKeyPair::generate();
-        let key_pair = KeyPair::from(
-            &dotenvx_cloud_keypair.get_pk_hex(),
-            &dotenvx_cloud_keypair.get_sk_hex(),
-            &Some("dotenvx".to_owned()),
-            &Some("dotenvx-cloud".to_owned()),
-            &Some("g_dotenvx".to_owned()),
-        );
-        key_pairs.push(key_pair);
         let private_keys = lines.join("\n");
         let keys_file_id = uuid::Uuid::now_v7().to_string();
         let file_content = format!(

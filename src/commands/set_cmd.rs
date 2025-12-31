@@ -1,5 +1,4 @@
 use crate::commands::crypt_util::encrypt_env_item;
-use crate::commands::framework::detect_framework;
 use crate::commands::{
     adjust_env_key, create_env_file, escape_shell_value, get_env_file_arg, get_public_key_for_file,
     is_sensitive_key, update_env_file,
@@ -17,11 +16,11 @@ lazy_static! {
 }
 
 pub fn set_command(command_matches: &ArgMatches, profile: &Option<String>) {
-    let mut env_file = get_env_file_arg(command_matches, profile);
+    let env_file = get_env_file_arg(command_matches, profile);
     let mut key_arg = command_matches
         .get_one::<String>("key")
         .map(|s| s.to_string());
-    let mut key_value: Option<String> = None;
+    let key_value: Option<String>;
     if key_arg.is_none() {
         // read key and value from prompt
         println!("Please provide the key and value to set.");
@@ -106,13 +105,6 @@ pub fn set_command(command_matches: &ArgMatches, profile: &Option<String>) {
         return;
     }
     if !env_file_exists {
-        // create .env file if it does not exist
-        if let Some(framework) = detect_framework()
-            && framework == "gofr"
-            && env_file.starts_with(".env")
-        {
-            env_file = format!("configs/{env_file}");
-        }
         create_env_file(&env_file, &public_key, Some(&pair), &None, &None);
         println!("Added {key} to {env_file}");
     } else if env_file_content.contains(&format!("{key}=")) {

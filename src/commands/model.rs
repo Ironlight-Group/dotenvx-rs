@@ -1,10 +1,9 @@
 use crate::commands::crypt_util::{
-    decrypt_env_item, encrypt_env_item, sign_message, verify_signature,
+    sign_message, verify_signature,
 };
 use crate::commands::{get_dotenvx_home, is_public_key_name};
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
-use dotenvx_rs::common::get_profile_name_from_file;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -114,111 +113,26 @@ impl KeyPair {
     }
 }
 
-pub struct EnvKeys {
-    pub metadata: Option<HashMap<String, String>>,
-    pub keys: Option<Vec<String>>,
-    pub source: Option<String>,
-}
-
-impl EnvKeys {
-    pub fn from_file<P: AsRef<Path>>(env_keys_file_path: P) -> anyhow::Result<EnvKeys> {
-        let content = fs::read_to_string(&env_keys_file_path)?;
-        let metadata = extract_front_matter(&content);
-        let keys: Vec<String> = content
-            .lines()
-            .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
-            .map(|line| line.trim().to_string())
-            .collect();
-        Ok(EnvKeys {
-            metadata: Some(metadata),
-            keys: Some(keys),
-            source: Some(env_keys_file_path.as_ref().to_string_lossy().to_string()),
-        })
-    }
-
-    pub fn new<P: AsRef<Path>>(env_keys_file_path: P) -> Self {
-        let keys_uuid = uuid::Uuid::now_v7().to_string();
-        let mut metadata = HashMap::new();
-        metadata.insert("uuid".to_string(), keys_uuid);
-        EnvKeys {
-            metadata: Some(metadata),
-            keys: Some(Vec::new()),
-            source: Some(env_keys_file_path.as_ref().to_string_lossy().to_string()),
-        }
-    }
-
-    pub fn write(&self) -> anyhow::Result<()> {
-        let mut content = String::new();
-        if let Some(metadata) = &self.metadata {
-            content.push_str("# ---\n");
-            if !metadata.contains_key("uuid") {
-                let keys_uuid = uuid::Uuid::now_v7().to_string();
-                content.push_str(&format!("# uuid: {keys_uuid}\n"));
-            }
-            for (key, value) in metadata {
-                content.push_str(&format!("# {key}: {value}\n"));
-            }
-            content.push_str("# ---\n\n");
-        }
-        if let Some(keys) = &self.keys {
-            for key in keys {
-                content.push_str(&format!("{key}\n"));
-            }
-        }
-        let file_path = self
-            .source
-            .as_ref()
-            .ok_or_else(|| anyhow!("Source path is not set"))?;
-        fs::write(file_path, content)?;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct EnvFile {
-    pub name: String,
-    pub source: Option<String>,
     pub content: String,
-    pub profile: Option<String>,
     pub metadata: HashMap<String, String>,
     pub entries: HashMap<String, String>,
 }
 
 impl EnvFile {
     pub fn from<P: AsRef<Path>>(env_file_path: P) -> Result<Self, std::io::Error> {
-        let file_name = env_file_path
-            .as_ref()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let mut path: Option<String> = None;
-        if let Ok(path_buf) = &env_file_path.as_ref().canonicalize() {
-            path = Some(path_buf.to_str().unwrap().to_string());
-        }
         let file = File::open(&env_file_path)?;
-        Self::from_read(file_name, path, file)
+        Self::from_read(file)
     }
 
-    pub fn from_read<R: Read>(
-        name: &str,
-        source: Option<String>,
-        mut reader: R,
-    ) -> Result<Self, std::io::Error> {
+    pub fn from_read<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
         let mut content = String::new();
         reader.read_to_string(&mut content)?;
-        let profile = if name.starts_with(".env.") {
-            Some(name.replace(".env.", ""))
-        } else {
-            None
-        };
         let metadata = extract_front_matter(&content);
         if let Ok(entries) = read_dotenv_entries(&content) {
             Ok(EnvFile {
-                name: name.to_string(),
-                source,
                 content,
-                profile,
                 metadata,
                 entries,
             })
@@ -264,38 +178,6 @@ impl EnvFile {
     }
 }
 
-struct ApplicationProperties {
-    pub profile: Option<String>,
-    pub metadata: HashMap<String, String>,
-    pub entries: HashMap<String, String>,
-    pub content: String,
-    pub source: Option<String>,
-}
-
-impl ApplicationProperties {
-    pub fn from_file<P: AsRef<Path>>(file_path: P) -> Result<Self, std::io::Error> {
-        let content = fs::read_to_string(&file_path)?;
-        let metadata = extract_front_matter(&content);
-        let entries = dotenvy::from_read_iter(Cursor::new(content.as_bytes()))
-            .flatten()
-            .collect();
-        let file_name = file_path
-            .as_ref()
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("application.properties")
-            .to_string();
-        let profile = get_profile_name_from_file(&file_name);
-        Ok(ApplicationProperties {
-            profile,
-            metadata,
-            entries,
-            content,
-            source: Some(file_path.as_ref().to_string_lossy().to_string()),
-        })
-    }
-}
-
 pub fn read_dotenv_entries(
     content: &str,
 ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
@@ -326,12 +208,6 @@ fn extract_front_matter(content: &str) -> HashMap<String, String> {
     metadata
 }
 
-pub fn sign_available(env_file_content: &str) -> bool {
-    env_file_content
-        .lines()
-        .any(|line| line.starts_with("# sign:") || line.starts_with("#sign:"))
-}
-
 pub fn get_signature(env_file_content: &str) -> Option<String> {
     // Find the signature line
     for line in env_file_content.lines() {
@@ -340,17 +216,6 @@ pub fn get_signature(env_file_content: &str) -> Option<String> {
         }
     }
     None
-}
-
-pub fn is_sign_legal(env_file_content: &str, public_key: &str) -> anyhow::Result<bool> {
-    if let Some(signature) = get_signature(env_file_content) {
-        let message = remove_signature(env_file_content);
-        verify_signature(public_key, &message, &signature)
-    } else {
-        Err(anyhow::anyhow!(
-            "The .env file does not contain a valid signature."
-        ))
-    }
 }
 
 pub fn remove_signature(env_file_content: &str) -> String {
@@ -406,40 +271,6 @@ pub fn update_signature(env_file_content: &str, signature: &str) -> String {
         lines.join("\n")
     } else {
         env_file_content.to_string()
-    }
-}
-
-impl EnvFile {
-    pub fn encrypt(
-        &self,
-        public_key: &str,
-    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
-        let mut encrypted_entries: HashMap<String, String> = HashMap::new();
-        for (key, value) in &self.entries {
-            if !value.starts_with("encrypted:") {
-                let encrypted_value = encrypt_env_item(public_key, value)?;
-                encrypted_entries.insert(key.clone(), encrypted_value);
-            } else {
-                encrypted_entries.insert(key.clone(), value.clone());
-            }
-        }
-        Ok(encrypted_entries)
-    }
-
-    pub fn decrypt(
-        &self,
-        private_key: &str,
-    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
-        let mut decrypted_entries: HashMap<String, String> = HashMap::new();
-        for (key, value) in &self.entries {
-            if value.starts_with("encrypted:") {
-                let decrypted_value = decrypt_env_item(private_key, value)?;
-                decrypted_entries.insert(key.clone(), decrypted_value);
-            } else {
-                decrypted_entries.insert(key.clone(), value.clone());
-            }
-        }
-        Ok(decrypted_entries)
     }
 }
 

@@ -6,10 +6,8 @@ authors = ["linux_china <libing.chen@gmail.com>"]
 description = "Dotenvx is a Rust command-line/library to encrypt your .env files - limiting their attack vector while retaining their benefits"
 keywords = ["dotenv", "dotenvx", "secret", "vault"]
 categories = ["command-line-utilities"]
-documentation = "https://github.com/linux-china/dotenvx-rs"
 readme = "README.md"
-homepage = "https://github.com/linux-china/dotenvx-rs"
-repository = "https://github.com/linux-china/dotenvx-rs"
+repository = "https://github.com/Ironlight-Group/dotenvx-rs"
 license = "MIT"
 
 
@@ -19,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 ## core and encryption
-dotenvy = "0.15.7"
+dotenvy = { git = "ssh://git@github.com/Ironlight-Group/dotenvy.git", tag = "v0.15.7" }
 ecies = { version = "0.2.10", default-features = false, features = ["std", "aes-rust"] }
 libsecp256k1 = { version = "0.7.2", default-features = false, features = ["static-context", "hmac", "sha2"] }
 sha2 = "0.10"
@@ -44,7 +42,6 @@ colored = "3.0"
 prettytable-rs = "0.10"
 arboard = "3.6"
 # file format
-java-properties = "2"
 csv = "1.4"
 toml = "0.9"
 yaml-rust2 = "0.10"
@@ -58,11 +55,7 @@ chrono = { version = "0.4.42", features = ["serde"] }
 regex = "1.12"
 lazy_static = "1.5.0"
 anyhow = "1.0.100"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
-native-tls = "0.2.14"
 which = "8.0.0"
-symlink = "0.1.0"
-url = "2.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
