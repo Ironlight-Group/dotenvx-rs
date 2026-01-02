@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 ## core and encryption
-dotenvy = { git = "ssh://git@github.com/Ironlight-Group/dotenvy.git", tag = "v0.15.7" }
+dotenvy = { git = "https://github.com/Ironlight-Group/dotenvy.git", tag = "v0.15.7" }
 ecies = { version = "0.2.10", default-features = false, features = ["std", "aes-rust"] }
 libsecp256k1 = { version = "0.7.2", default-features = false, features = ["static-context", "hmac", "sha2"] }
 sha2 = "0.10"
@@ -27,7 +27,7 @@ totp-rs = { version = "5.7", features = ["otpauth", "gen_secret"] }
 rand = "0.9"
 uuid = { version = "1.19", features = ["v4", "v7"] }
 base64ct = "1.8.0"
-keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native", "sync-secret-service"] }
+keyring = { version = "3.6.3", features = ["apple-native", "linux-native", "sync-secret-service"] }
 hex = "0.4.3"
 # cli
 shlex = "1.3"
