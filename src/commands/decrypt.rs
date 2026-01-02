@@ -2,18 +2,15 @@ use crate::commands::crypt_util::{decrypt_env_item, decrypt_value};
 use crate::commands::model::EnvFile;
 use crate::commands::{
     adjust_env_key, escape_shell_value, get_env_file_arg, get_private_key_for_file,
-    get_public_key_from_text_file, is_remote_env_file, read_content_from_dotenv_url,
-    read_dotenv_url, std_output,
+    get_public_key_from_text_file,
+    std_output,
 };
 use clap::ArgMatches;
 use colored::Colorize;
 use dotenvx_rs::dotenvx::get_private_key;
 use glob::Pattern;
-use java_properties::PropertiesIter;
 use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
-use std::io::BufReader;
 
 pub fn decrypt_command(command_matches: &ArgMatches, profile: &Option<String>) {
     if let Some(arg_value) = command_matches.get_one::<String>("value") {
@@ -25,12 +22,7 @@ pub fn decrypt_command(command_matches: &ArgMatches, profile: &Option<String>) {
         verify_signature(&env_file);
         return;
     }
-    let is_remote_env = is_remote_env_file(&env_file);
     let env_file_path = std::path::PathBuf::from(&env_file);
-    if !is_remote_env && !std::path::PathBuf::from(&env_file).exists() {
-        //eprintln!("Error: The specified env file '{env_file}' does not exist.");
-        return;
-    }
     let file_name = env_file_path.file_name().unwrap().to_str().unwrap();
     // decrypt normal text file if not .env or .properties file
     if !file_name.starts_with(".env") && !file_name.ends_with(".properties") {
@@ -69,11 +61,7 @@ pub fn decrypt_command(command_matches: &ArgMatches, profile: &Option<String>) {
         }
         return;
     }
-    let file_content = if is_remote_env {
-        read_content_from_dotenv_url(&env_file, None).unwrap()
-    } else {
-        fs::read_to_string(&env_file_path).unwrap()
-    };
+    let file_content = fs::read_to_string(&env_file_path).unwrap();
     let mut new_lines: Vec<String> = Vec::new();
     let mut is_changed = false;
     for line in file_content.lines() {
@@ -112,37 +100,20 @@ pub fn decrypt_env_entries(
 ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
     let private_key = get_private_key_for_file(env_file)?;
     let mut entries: HashMap<String, String> = HashMap::new();
-    if env_file.ends_with(".properties") {
-        let f = File::open(env_file)?;
-        let reader = BufReader::new(f);
-        PropertiesIter::new(reader)
-            .read_into(|key, value| {
-                if value.starts_with("encrypted:") {
-                    let decrypted_text = decrypt_env_item(&private_key, &value).unwrap();
-                    entries.insert(key.clone(), decrypted_text);
-                } else {
-                    entries.insert(key.clone(), value.clone());
-                }
-            })
-            .unwrap();
-    } else {
-        let items = if env_file.starts_with("http://") || env_file.starts_with("https://") {
-            read_dotenv_url(env_file, None)?
+    let items =  {
+        let mut entries: HashMap<String, String> = HashMap::new();
+        for item in dotenvy::from_filename_iter(env_file)? {
+            let (key, value) = &item.unwrap();
+            entries.insert(key.clone(), value.clone());
+        }
+        entries
+    };
+    for (key, value) in items {
+        if value.starts_with("encrypted:") {
+            let decrypted_text = decrypt_env_item(&private_key, &value)?;
+            entries.insert(key.clone(), decrypted_text);
         } else {
-            let mut entries: HashMap<String, String> = HashMap::new();
-            for item in dotenvy::from_filename_iter(env_file)? {
-                let (key, value) = &item.unwrap();
-                entries.insert(key.clone(), value.clone());
-            }
-            entries
-        };
-        for (key, value) in items {
-            if value.starts_with("encrypted:") {
-                let decrypted_text = decrypt_env_item(&private_key, &value)?;
-                entries.insert(key.clone(), decrypted_text);
-            } else {
-                entries.insert(key.clone(), value.clone());
-            }
+            entries.insert(key.clone(), value.clone());
         }
     }
     Ok(entries)

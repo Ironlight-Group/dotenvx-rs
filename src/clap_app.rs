@@ -227,14 +227,6 @@ pub fn build_dotenvx_app() -> Command {
                 .index(1)
                 .required(false),
         );
-    let link_command = Command::new("link")
-        .about("Create a symbolic link with dotenvx")
-        .arg(
-            Arg::new("command")
-                .help("Command linked with dotenvx, such as 'lua', 'mysql', etc.")
-                .index(1)
-                .required(true),
-        );
     let rotate_command = Command::new("rotate")
         .about("Rotate keypair and re-encrypt .env file in the current directory")
         .arg(
@@ -341,27 +333,6 @@ pub fn build_dotenvx_app() -> Command {
                 .num_args(1)
                 .required(false),
         );
-    let cloud_command = Command::new("cloud")
-        .about("Dotenv cloud operations, such as registration, send, sync etc.")
-        .subcommand(Command::new("signup").about("Sign up an account on Dotenvx cloud"))
-        .subcommand(Command::new("me").about("Display current user info on Dotenvx cloud"))
-        .subcommand(Command::new("send").about("Send secret to a user on Dotenvx cloud"))
-        .subcommand(
-            Command::new("sync")
-                .about("Send secret to a user on Dotenvx cloud")
-                .arg(
-                    Arg::new("env-file")
-                        .short('f')
-                        .long("env-file")
-                        .help("path to your env file for synchronization on Dotenvx cloud")
-                        .num_args(1)
-                        .required(false),
-                ),
-        )
-        .subcommand(
-            Command::new("backup")
-                .about("Encrypt and backup your $HOME/.dotenvx/.env.keys.aes on Dotenvx cloud"),
-        );
     Command::new("dotenvx")
         .version(VERSION)
         .author("linux_china <libing.chen@gmail.com>")
@@ -409,7 +380,6 @@ pub fn build_dotenvx_app() -> Command {
         .subcommand(verify_command)
         .subcommand(keypair_command)
         .subcommand(ls_command)
-        .subcommand(link_command)
         .subcommand(rotate_command)
         .subcommand(sync_command)
         .subcommand(diff_command)

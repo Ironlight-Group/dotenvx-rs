@@ -1,18 +1,12 @@
 use crate::commands::crypt_util::EcKeyPair;
-use crate::commands::framework::detect_framework;
 use crate::commands::model::{DotenvxKeyStore, KeyPair};
 use clap::ArgMatches;
 use colored::Colorize;
 use colored_json::to_colored_json_auto;
 use csv::WriterBuilder;
 use dotenvx_rs::common::{find_dotenv_keys_file, find_env_file_path, get_profile_name_from_file};
-use java_properties::PropertiesIter;
-use reqwest::blocking::Client;
-use reqwest::header;
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use walkdir::DirEntry;
@@ -31,12 +25,8 @@ pub mod run;
 pub mod set_cmd;
 pub mod verify;
 
-pub mod cloud;
 pub mod completion;
 pub mod doctor;
-pub mod dotenvx_cloud;
-pub mod framework;
-pub mod link;
 pub mod linter;
 pub mod sync;
 
@@ -118,62 +108,10 @@ pub fn read_dotenv_file<P: AsRef<Path>>(
     path: P,
 ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
     let mut entries: HashMap<String, String> = HashMap::new();
-    let file_name = path.as_ref().file_name().and_then(|s| s.to_str()).unwrap();
-    if file_name.ends_with(".properties") {
-        let f = File::open(path)?;
-        let reader = BufReader::new(f);
-        PropertiesIter::new(reader)
-            .read_into(|key, value| {
-                entries.insert(key, value);
-            })
-            .unwrap();
-    } else {
-        for (key, value) in dotenvy::from_filename_iter(path)?.flatten() {
-            entries.insert(key.clone(), value.clone());
-        }
-    }
-    Ok(entries)
-}
-
-pub fn read_dotenv_url(
-    file_url: &str,
-    headers: Option<HashMap<String, String>>,
-) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
-    let mut entries: HashMap<String, String> = HashMap::new();
-    let body = read_content_from_dotenv_url(file_url, headers)?;
-    let reader = io::Cursor::new(body.into_bytes());
-    for (key, value) in dotenvy::from_read_iter(reader).flatten() {
+    for (key, value) in dotenvy::from_filename_iter(path)?.flatten() {
         entries.insert(key.clone(), value.clone());
     }
     Ok(entries)
-}
-
-pub fn read_content_from_dotenv_url(
-    file_url: &str,
-    headers: Option<HashMap<String, String>>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let client = Client::new();
-    let mut request_headers = header::HeaderMap::new();
-    if let Some(custom_headers) = headers {
-        for (key, value) in custom_headers {
-            request_headers.insert(
-                header::HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                header::HeaderValue::from_str(&value).unwrap(),
-            );
-        }
-    }
-    let response = client.get(file_url).headers(request_headers).send()?;
-    if response.status().is_success() {
-        let body = response.text()?;
-        Ok(body)
-    } else {
-        Err(format!(
-            "Failed to fetch dotenv file from URL: {}. Status: {}",
-            file_url,
-            response.status()
-        )
-        .into())
-    }
 }
 
 pub fn get_private_key_for_file(env_file: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -356,31 +294,8 @@ pub fn create_env_file<P: AsRef<Path>>(
 ) {
     let file_name = env_file.as_ref().file_name().unwrap().to_str().unwrap();
     let profile_name = get_profile_name_from_file(file_name);
-    let mut env_pub_key_name = get_public_key_name(&profile_name);
-    if file_name.ends_with(".properties") {
-        env_pub_key_name = env_pub_key_name
-            .to_lowercase()
-            .replace('_', ".")
-            .to_string();
-    }
-    let header_text = if file_name.ends_with(".properties") && env_file.as_ref().exists() {
-        let mut app_name: Option<String> = group.clone();
-        let mut app_group: Option<String> = name.clone();
-        let f = File::open(&env_file).unwrap();
-        let reader = BufReader::new(f);
-        PropertiesIter::new(reader)
-            .read_into(|key, value| {
-                if key == "spring.application.name" {
-                    app_name = Some(value);
-                } else if key == "spring.application.group" {
-                    app_group = Some(value);
-                }
-            })
-            .unwrap();
-        construct_env_file_header(&env_pub_key_name, public_key, &app_group, &app_name)
-    } else {
-        construct_env_file_header(&env_pub_key_name, public_key, group, name)
-    };
+    let env_pub_key_name = get_public_key_name(&profile_name);
+    let header_text = construct_env_file_header(&env_pub_key_name, public_key, group, name);
     if env_file.as_ref().exists() {
         let file_content = fs::read_to_string(&env_file).unwrap();
         if !file_content.contains(&env_pub_key_name) {
@@ -619,40 +534,6 @@ pub fn get_env_file_arg(command_matches: &ArgMatches, profile: &Option<String>) 
     } else {
         ".env".to_string()
     };
-    // if the file does not exist in the current dir, we try to detect it
-    if !Path::new(&dotenv_file).exists() {
-        // detect other files
-        let properties_file = if let Some(profile_name) = profile {
-            format!("application-{profile_name}.properties")
-        } else {
-            "application.properties".to_string()
-        };
-        if Path::new(&properties_file).exists() {
-            return properties_file;
-        }
-        // detect framework
-        if let Some(framework) = detect_framework() {
-            if framework == "spring-boot" {
-                let properties_file = if let Some(profile_name) = profile {
-                    format!("src/main/resources/application-{profile_name}.properties")
-                } else {
-                    "src/main/resources/application.properties".to_string()
-                };
-                if Path::new(&properties_file).exists() {
-                    return properties_file;
-                }
-            } else if framework == "gofr" {
-                let env_file = if let Some(profile_name) = profile {
-                    format!("configs/.env.{profile_name}")
-                } else {
-                    "configs/.env".to_string()
-                };
-                if Path::new(&env_file).exists() {
-                    return env_file;
-                }
-            }
-        }
-    }
     dotenv_file
 }
 
@@ -804,10 +685,6 @@ pub fn std_output(entries: &HashMap<String, String>, format: &Option<&String>) {
             }
         }
     }
-}
-
-pub fn is_remote_env_file(env_file: &str) -> bool {
-    env_file.starts_with("http://") || env_file.starts_with("https://")
 }
 
 #[cfg(test)]

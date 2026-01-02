@@ -34,7 +34,7 @@ pub fn rotate_command(command_matches: &ArgMatches, profile: &Option<String>) {
         // generate a new pair of keys
         let pair = EcKeyPair::generate();
         let pk_hex = pair.get_pk_hex();
-        let sk_hex = pair.get_sk_hex();
+        let _sk_hex = pair.get_sk_hex();
         // update the public/private key in the .env file
         write_public_key_to_file(&env_file, &pk_hex).unwrap();
         let private_key_name = get_private_key_name_for_file(&env_file);
